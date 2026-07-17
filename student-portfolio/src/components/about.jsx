@@ -1,13 +1,14 @@
-import react from "react";
-
 function About() {
-    return (
-        <section id="about">
-            <h2>About Me</h2>
-            <p>Aspiring Data Scientist and AI/ML enthusiast with a strong interest in Python, Machine Learning, and Data Analytics. 
-                I love turning data into meaningful insights and continuously expanding my technical knowledge.</p>
-        </section>
-    );
+  return (
+    <section id="about" className="about">
+      <p className="section-label">About</p>
+      <p>
+        B.Tech student exploring frontend engineering, currently building
+        projects with React and Vite. Interested in clean component design,
+        readable code, and turning coursework into things that actually ship.
+      </p>
+    </section>
+  );
 }
 
 export default About;
