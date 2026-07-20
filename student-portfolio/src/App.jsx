@@ -1,19 +1,33 @@
+import { useState, useEffect } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import NavBar from './components/NavBar';
-import Header from './components/Header';
-import About from './components/About';
-import Skills from './components/Skills';
 import Footer from './components/Footer';
+import Home from './pages/Home';
+import Projects from './pages/Projects';
+import Contact from './pages/Contact';
+import NotFound from './pages/NotFound';
 import './App.css';
 
-const skillList = ['JavaScript', 'React', 'Vite', 'HTML', 'CSS', 'Git', 'Node.js'];
-
 function App() {
+  const [theme, setTheme] = useState('dark');
+
+  useEffect(() => {
+    document.documentElement.className = theme;
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   return (
     <div className="app">
-      <NavBar />
-      <Header name="Patel Aneri" themeColor="#f2a65a" />
-      <About />
-      <Skills skillList={skillList} />
+      <NavBar theme={theme} onToggleTheme={toggleTheme} />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/projects" element={<Projects />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
       <Footer />
     </div>
   );

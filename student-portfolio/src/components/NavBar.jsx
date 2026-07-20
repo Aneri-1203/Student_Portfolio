@@ -1,48 +1,27 @@
-import { useEffect, useState } from 'react';
+import { NavLink } from 'react-router-dom';
 
-const SECTIONS = [
-  { id: 'about', label: 'About' },
-  { id: 'skills', label: 'Skills' },
-  { id: 'footer', label: 'Footer' },
+const ROUTES = [
+  { to: '/', label: 'Home' },
+  { to: '/projects', label: 'Projects' },
+  { to: '/contact', label: 'Contact' },
 ];
 
-function NavBar() {
-  const [active, setActive] = useState('about');
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) setActive(entry.target.id);
-        });
-      },
-      { threshold: 0.4 }
-    );
-
-    SECTIONS.forEach(({ id }) => {
-      const el = document.getElementById(id);
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, []);
-
-  const handleClick = (id) => {
-    setActive(id);
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
+function NavBar({ theme, onToggleTheme }) {
   return (
     <nav className="navbar">
-      {SECTIONS.map(({ id, label }) => (
-        <button
-          key={id}
-          className={active === id ? 'active' : ''}
-          onClick={() => handleClick(id)}
+      {ROUTES.map(({ to, label }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={to === '/'}
+          className={({ isActive }) => (isActive ? 'active' : '')}
         >
           {label}
-        </button>
+        </NavLink>
       ))}
+      <button className="theme-toggle" onClick={onToggleTheme}>
+        {theme === 'dark' ? '☀ Light' : '☾ Dark'}
+      </button>
     </nav>
   );
 }
