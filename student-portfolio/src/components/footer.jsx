@@ -1,7 +1,7 @@
 function Footer() {
   return (
     <footer id="footer" className="footer">
-      <p className="section-label">// contact</p>
+      <p className="section-label">Contact</p>
       <p className="footer-links">
        <a href="https://mail.google.com/mail/?view=cm&fs=1&to=aneritpatel1203@gmail.com&su=Portfolio%20Contact"
         target="_blank"
