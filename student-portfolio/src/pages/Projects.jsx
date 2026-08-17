@@ -1,112 +1,178 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Spinner from '../components/spinner';
 import ErrorMessage from '../components/errormessage';
 
-// title/description/tech are yours — just fill in each repo as "owner/repo-name"
-// exactly as it appears in the GitHub URL, e.g. github.com/OWNER/REPO
-const projects = [
-  {
-    title: 'SkillSync',
-    description: 'A full-stack web application that enables users to connect, exchange skills, and collaborate through a secure and interactive skill-sharing platform.',
-    tech: ['React.js', 'FastAPI', 'MongoDB', 'Tailwind', 'Python'],
-     repo: 'mahek-40/SkillSync',
-
-  },
-  {
-    title: 'Fleet Management System',
-    description: 'A full-stack web application that streamlines fleet operations through vehicle tracking, trip management, maintenance monitoring, and role-based access control.',
-    tech: ['React', 'Node.js', 'Express', 'PostgreSQL', 'HTML', 'CSS'],
-    repo: 'PatelSaumya-hub/odoo-Hackathon--26Gvp',
-  },
-  {
-    title: 'AI Supply Chain Risk',
-    description: 'An AI-powered web dashboard that automatically classifies pharmaceutical supply chain records into risk categories and severity levels using machine learning.',
-    tech: ['Python', 'Flask', 'Machine Learning', 'HTML', 'CSS'],
-    repo: '24AIML048-Vidhi/AI_SupplyChain_Risk',
-  },
-];
-
+const GITHUB_USERNAME = 'Aneri-1203';
+const GITHUB_API = `https://api.github.com/users/${GITHUB_USERNAME}/repos?per_page=100&sort=updated`;
 
 function Projects() {
-  const [repoData, setRepoData] = useState({});
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
+    const loadProjects = async () => {
+      setLoading(true);
+      setError(null);
 
-    Promise.allSettled(
-      projects.map((project) =>
-        fetch(`https://api.github.com/repos/${project.repo}`).then((res) => {
-          if (!res.ok) throw new Error(`${res.status}`);
-          return res.json();
-        })
-      )
-    ).then((results) => {
-      const map = {};
-      let anySucceeded = false;
+      try {
+        const response = await fetch(GITHUB_API);
 
-      results.forEach((result, i) => {
-        if (result.status === 'fulfilled') {
-          map[projects[i].repo] = result.value;
-          anySucceeded = true;
+        if (!response.ok) {
+          throw new Error(
+            `GitHub request failed with status ${response.status}`
+          );
         }
-      });
 
-      setRepoData(map);
-      if (!anySucceeded) setError('Could not reach GitHub for any project.');
-      setLoading(false);
-    });
+        const repositories = await response.json();
+
+        // Only show public repositories that are not forks.
+        const publicRepositories = repositories.filter(
+          (repo) => !repo.fork
+        );
+
+        const projectsWithLanguages = await Promise.all(
+          publicRepositories.map(async (repo) => {
+            try {
+              const languageResponse = await fetch(repo.languages_url);
+
+              if (!languageResponse.ok) {
+                return {
+                  ...repo,
+                  technologies: repo.language ? [repo.language] : [],
+                };
+              }
+
+              const languages = await languageResponse.json();
+
+              const technologies = Object.keys(languages).slice(0, 6);
+
+              return {
+                ...repo,
+                technologies,
+              };
+            } catch {
+              return {
+                ...repo,
+                technologies: repo.language ? [repo.language] : [],
+              };
+            }
+          })
+        );
+
+        setProjects(projectsWithLanguages);
+      } catch (err) {
+        console.error(err);
+        setError(
+          'Unable to load your GitHub projects. Please try again.'
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProjects();
   }, [reloadKey]);
 
-  const handleRetry = () => setReloadKey((prev) => prev + 1);
-
-  if (loading) {
-    return (
-      <section id="projects" className="projects">
-        <p className="section-label">Projects</p>
-        <Spinner />
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section id="projects" className="projects">
-        <p className="section-label">Projects</p>
-        <ErrorMessage message={error} onRetry={handleRetry} />
-      </section>
-    );
-  }
+  const handleRetry = () => {
+    setReloadKey((previous) => previous + 1);
+  };
 
   return (
     <section id="projects" className="projects">
-      <p className="section-label">Projects</p>
-      <div className="projects-grid">
-        {projects.map((project) => {
-          const repo = repoData[project.repo];
-          return (
+      <div className="projects-heading">
+        <div>
+          <p className="section-label">Projects</p>
+          <h2>Things I have built</h2>
+        </div>
+
+        <a
+          className="github-profile-link"
+          href={`https://github.com/${GITHUB_USERNAME}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          View GitHub ↗
+        </a>
+      </div>
+
+      <p className="projects-intro">
+        My public GitHub projects 
+       
+      </p>
+
+      {loading && <Spinner />}
+
+      {!loading && error && (
+        <ErrorMessage
+          message={error}
+          onRetry={handleRetry}
+        />
+      )}
+
+      {!loading && !error && projects.length === 0 && (
+        <div className="empty-state">
+          <p>No public projects found yet.</p>
+        </div>
+      )}
+
+      {!loading && !error && projects.length > 0 && (
+        <div className="projects-grid">
+          {projects.map((project) => (
             <a
-              key={project.title}
-              href={repo ? repo.html_url : `https://github.com/${project.repo}`}
+              key={project.id}
+              href={project.html_url}
               target="_blank"
               rel="noopener noreferrer"
               className="project-card"
             >
-              <h3>{project.title}</h3>
-              <p>{project.description}</p>
-              <ul className="skills-grid">
-                {project.tech.map((t) => (
-                  <li key={t}>{t}</li>
-                ))}
-              </ul>
-              {repo && <span className="repo-stars">⭐ {repo.stargazers_count}</span>}
+              <div className="project-card-top">
+                <span className="project-folder">
+                  PROJECT
+                </span>
+
+                <span className="project-arrow">
+                  ↗
+                </span>
+              </div>
+
+              <h3>{project.name}</h3>
+
+              <p>
+                {project.description ||
+                  'A project built while learning and exploring software development.'}
+              </p>
+
+              <div className="project-techs">
+                {project.technologies.length > 0 ? (
+                  project.technologies.map((technology) => (
+                    <span key={technology}>
+                      {technology}
+                    </span>
+                  ))
+                ) : (
+                  <span>Technology not specified</span>
+                )}
+              </div>
+
+              <div className="project-meta">
+                <span>
+                  ⭐ {project.stargazers_count}
+                </span>
+
+                <span>
+                  Forks: {project.forks_count}
+                </span>
+
+                <span>
+                  {project.visibility}
+                </span>
+              </div>
             </a>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

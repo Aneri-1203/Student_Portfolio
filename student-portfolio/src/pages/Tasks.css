@@ -1,0 +1,350 @@
+/* ========================================
+   TASKS PAGE
+======================================== */
+
+.tasks-page {
+  width: 100%;
+}
+
+.tasks-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 30px;
+  margin-bottom: 30px;
+}
+
+.tasks-heading h1 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(32px, 5vw, 46px);
+  letter-spacing: -0.035em;
+}
+
+.tasks-heading p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.tasks-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.add-task-btn,
+.save-task-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 17px;
+  background: var(--accent-green);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.add-task-btn:hover,
+.save-task-btn:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+
+/* ========================================
+   FORM
+======================================== */
+
+.task-form-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+
+.task-form-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.task-form-header h2 {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 24px;
+}
+
+.close-form-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.close-form-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-green);
+}
+
+.task-form-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+}
+
+.task-form-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.task-form-card input,
+.task-form-card textarea,
+.task-form-card select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+}
+
+.task-form-card textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.task-form-card input:focus,
+.task-form-card textarea:focus,
+.task-form-card select:focus {
+  outline: none;
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.task-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.task-form-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.cancel-btn {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 17px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cancel-btn:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.save-task-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+
+/* ========================================
+   TASK CARDS
+======================================== */
+
+.tasks-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.task-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 20px;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.task-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-green);
+  background: var(--panel-hover);
+}
+
+.task-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+}
+
+.task-priority,
+.task-status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.task-priority {
+  color: var(--muted);
+}
+
+.priority-high {
+  color: #f59e9e;
+}
+
+.priority-medium {
+  color: #e8c867;
+}
+
+.priority-low {
+  color: var(--accent-green);
+}
+
+.task-status {
+  color: var(--muted);
+}
+
+.status-completed {
+  color: var(--accent-green);
+}
+
+.task-card h3 {
+  margin: 0 0 8px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.task-description {
+  margin: 0 0 15px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.task-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+
+.task-card-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.edit-task-btn,
+.delete-task-btn {
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.edit-task-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+.edit-task-btn:hover {
+  color: var(--accent-green);
+  border-color: var(--accent-green);
+}
+
+.delete-task-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+.delete-task-btn:hover {
+  color: #f59e9e;
+  border-color: #f59e9e;
+}
+
+
+/* ========================================
+   ERROR
+======================================== */
+
+.task-error {
+  margin-bottom: 20px;
+}
+
+
+/* ========================================
+   MOBILE
+======================================== */
+
+@media (max-width: 700px) {
+
+  .tasks-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tasks-actions {
+    width: 100%;
+  }
+
+  .tasks-actions button {
+    flex: 1;
+  }
+
+  .task-form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .task-meta {
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .task-card-buttons {
+    justify-content: stretch;
+  }
+
+  .edit-task-btn,
+  .delete-task-btn {
+    flex: 1;
+  }
+}
