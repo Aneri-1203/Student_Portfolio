@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
 
 import NavBar from './components/NavBar';
 import Footer from './components/Footer';
+import PageLoader from './components/PageLoader';
 
+// Home is small and always the landing page — keep it eager
 import Home from './pages/Home';
-import Projects from './pages/Projects';
-import Contact from './pages/Contact';
-import Tasks from './pages/Tasks';
-import NotFound from './pages/NotFound';
+
+// Lazy-load all other routes so they are only downloaded when visited
+const Projects = lazy(() => import('./pages/Projects'));
+const Contact  = lazy(() => import('./pages/Contact'));
+const Tasks    = lazy(() => import('./pages/Tasks'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 import './App.css';
 
@@ -32,32 +36,39 @@ function App() {
         onToggleTheme={toggleTheme}
       />
 
-      <Routes>
-        <Route
-          path="/"
-          element={<Home />}
-        />
+      {/*
+        Suspense is placed at the route level so each lazy route shows the
+        fallback independently. NavBar and Footer are never wrapped — they
+        are eager components that remain visible during chunk loading.
+      */}
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route
+            path="/"
+            element={<Home />}
+          />
 
-        <Route
-          path="/projects"
-          element={<Projects />}
-        />
+          <Route
+            path="/projects"
+            element={<Projects />}
+          />
 
-        <Route
-          path="/tasks"
-          element={<Tasks />}
-        />
+          <Route
+            path="/tasks"
+            element={<Tasks />}
+          />
 
-        <Route
-          path="/contact"
-          element={<Contact />}
-        />
+          <Route
+            path="/contact"
+            element={<Contact />}
+          />
 
-        <Route
-          path="*"
-          element={<NotFound />}
-        />
-      </Routes>
+          <Route
+            path="*"
+            element={<NotFound />}
+          />
+        </Routes>
+      </Suspense>
 
       <Footer />
     </div>

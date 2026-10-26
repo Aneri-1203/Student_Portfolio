@@ -1,3 +1,12 @@
+import { memo } from 'react';
+
+/**
+ * Footer — pure static component, no props.
+ * Wrapped in React.memo so it is never re-rendered when a parent
+ * state change (e.g. the theme toggle in App) causes App to re-render.
+ * Without memo, Footer re-renders on every theme toggle even though
+ * its output never changes.
+ */
 function Footer() {
   return (
     <footer id="footer" className="footer">
@@ -20,4 +29,4 @@ function Footer() {
   );
 }
 
-export default Footer;
+export default memo(Footer);
