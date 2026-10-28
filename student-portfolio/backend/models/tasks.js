@@ -18,7 +18,7 @@ const taskSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Priority is required'],
         enum: {
-            values: ['low', 'medium', 'high'],
+            values: ['low', 'medium', 'high', 'critical'],
             message: '{VALUE} is not a valid priority level'
         },
         default: 'medium'
@@ -45,10 +45,30 @@ const taskSchema = new mongoose.Schema({
         default: false
     },
 
+    // Who created / submitted the task
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
+    },
+
+    // Who the task is assigned to (defaults to admin/owner)
+    assignedTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
+
+    category: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+
+    notes: {
+        type: String,
+        trim: true,
+        default: ''
     },
 
     createdAt: {

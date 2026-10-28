@@ -1,15 +1,5 @@
-import {
-    createContext,
-    useContext,
-    useEffect,
-    useState
-} from 'react';
-
-import {
-    getCurrentUser,
-    loginUser,
-    registerUser
-} from '../api';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { getCurrentUser, loginUser, registerUser, googleLogin as apiGoogleLogin } from '../api';
 
 const AuthContext = createContext(null);
 
@@ -29,7 +19,7 @@ export function AuthProvider({ children }) {
             try {
                 const data = await getCurrentUser();
                 setUser(data.data);
-            } catch (error) {
+            } catch {
                 localStorage.removeItem('token');
                 setUser(null);
             } finally {
@@ -41,33 +31,24 @@ export function AuthProvider({ children }) {
     }, []);
 
     const login = async (email, password) => {
-        const data = await loginUser({
-            email,
-            password
-        });
-
+        const data = await loginUser({ email, password });
         localStorage.setItem('token', data.token);
         setUser(data.data);
-
         return data;
     };
 
-    const register = async (
-        name,
-        email,
-        password,
-        work
-    ) => {
-        const data = await registerUser({
-            name,
-            email,
-            password,
-            work
-        });
+    const register = async (name, email, password, work) => {
+        // Registration no longer auto-logs in — requires email verification first
+        const data = await registerUser({ name, email, password, work });
+        return data;
+    };
 
-        localStorage.setItem('token', data.token);
-        setUser(data.data);
-
+    const googleLogin = async (credential, work = '') => {
+        const data = await apiGoogleLogin(credential, work);
+        if (data.token) {
+            localStorage.setItem('token', data.token);
+            setUser(data.data);
+        }
         return data;
     };
 
@@ -81,8 +62,10 @@ export function AuthProvider({ children }) {
         loading,
         login,
         register,
+        googleLogin,
         logout,
-        isAuthenticated: Boolean(user)
+        isAuthenticated: Boolean(user),
+        isAdmin: user?.role === 'admin'
     };
 
     return (
@@ -94,12 +77,6 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
     const context = useContext(AuthContext);
-
-    if (!context) {
-        throw new Error(
-            'useAuth must be used inside AuthProvider'
-        );
-    }
-
+    if (!context) throw new Error('useAuth must be used inside AuthProvider');
     return context;
 }

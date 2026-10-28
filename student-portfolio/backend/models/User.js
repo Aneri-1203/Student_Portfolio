@@ -27,6 +27,34 @@ const userSchema = new mongoose.Schema({
         trim: true
     },
 
+    role: {
+        type: String,
+        enum: ['student', 'admin'],
+        default: 'student'
+    },
+
+    // Email verification
+    isEmailVerified: {
+        type: Boolean,
+        default: false
+    },
+
+    emailVerificationToken: {
+        type: String,
+        default: null
+    },
+
+    emailVerificationExpires: {
+        type: Date,
+        default: null
+    },
+
+    // Resend rate limiting
+    lastVerificationSentAt: {
+        type: Date,
+        default: null
+    },
+
     googleId: {
         type: String,
         default: null

@@ -12,6 +12,7 @@ const { OAuth2Client } = require('google-auth-library');
 const Task = require('./models/Tasks');
 const User = require('./models/User');
 const authMiddleware = require('./middleware/auth');
+const adminMiddleware = require('./middleware/adminMiddleware');
 const validateTask = require('./middleware/validateTask');
 
 const app = express();
@@ -41,12 +42,11 @@ function generateToken(user) {
         {
             id: user._id,
             email: user.email,
-            name: user.name
+            name: user.name,
+            role: user.role || 'student'
         },
         process.env.JWT_SECRET,
-        {
-            expiresIn: '1h'
-        }
+        { expiresIn: '1h' }
     );
 }
 
@@ -56,9 +56,37 @@ function getSafeUser(user) {
         name: user.name,
         email: user.email,
         work: user.work,
+        role: user.role || 'student',
+        isEmailVerified: user.isEmailVerified || false,
         profileImage: user.profileImage || '',
         createdAt: user.createdAt
     };
+}
+
+async function sendEmail({ to, subject, html }) {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+        console.warn('Email not configured — EMAIL_USER/EMAIL_PASSWORD missing.');
+        return false;
+    }
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASSWORD
+        }
+    });
+    await transporter.sendMail({
+        from: `"Portfolio" <${process.env.EMAIL_USER}>`,
+        to,
+        subject,
+        html
+    });
+    return true;
+}
+
+// Returns the admin email from environment (the portfolio owner)
+function getAdminEmail() {
+    return (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
 }
 
 
@@ -84,10 +112,9 @@ app.post('/register', async (req, res, next) => {
             });
         }
 
-        const existingUser = await User.findOne({
-            email: email.toLowerCase().trim()
-        });
+        const normalizedEmail = email.toLowerCase().trim();
 
+        const existingUser = await User.findOne({ email: normalizedEmail });
         if (existingUser) {
             return res.status(400).json({
                 success: false,
@@ -97,20 +124,197 @@ app.post('/register', async (req, res, next) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Generate email verification token
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        // Check if this email matches the admin email in env
+        const isAdmin = getAdminEmail() && normalizedEmail === getAdminEmail();
+
         const user = await User.create({
             name: name.trim(),
-            email: email.toLowerCase().trim(),
+            email: normalizedEmail,
             password: hashedPassword,
-            work: work.trim()
+            work: work.trim(),
+            role: isAdmin ? 'admin' : 'student',
+            isEmailVerified: false,
+            emailVerificationToken: hashedToken,
+            emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+            lastVerificationSentAt: new Date()
         });
 
-        const token = generateToken(user);
+        // Send verification email
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const verifyUrl = `${frontendUrl}/verify-email?token=${rawToken}`;
+
+        const emailSent = await sendEmail({
+            to: user.email,
+            subject: 'Verify your Portfolio account',
+            html: `
+                <h2>Welcome, ${user.name}!</h2>
+                <p>Please verify your email address to access the Task Manager.</p>
+                <p>This link expires in 24 hours.</p>
+                <a href="${verifyUrl}" style="
+                    display:inline-block;
+                    padding:12px 24px;
+                    background:#67e8a5;
+                    color:#0b0f14;
+                    text-decoration:none;
+                    border-radius:8px;
+                    font-weight:600;
+                ">Verify Email</a>
+                <p>Or copy this link: ${verifyUrl}</p>
+                <p>If you did not create this account, ignore this email.</p>
+            `
+        });
+
+        if (!emailSent) {
+            // Dev fallback
+            console.log('EMAIL VERIFICATION URL:', verifyUrl);
+        }
 
         res.status(201).json({
             success: true,
-            message: 'Account created successfully',
-            token,
+            message: emailSent
+                ? 'Account created! Please check your email to verify your account.'
+                : 'Account created! Email service not configured — check server console for verification link.',
+            requiresVerification: true
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   VERIFY EMAIL
+========================= */
+
+app.get('/auth/verify-email', async (req, res, next) => {
+    try {
+        const { token } = req.query;
+
+        if (!token) {
+            return res.status(400).json({
+                success: false,
+                message: 'Verification token is required'
+            });
+        }
+
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+        const user = await User.findOne({
+            emailVerificationToken: hashedToken,
+            emailVerificationExpires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: 'Verification link is invalid or has expired'
+            });
+        }
+
+        user.isEmailVerified = true;
+        user.emailVerificationToken = null;
+        user.emailVerificationExpires = null;
+        await user.save();
+
+        const jwtToken = generateToken(user);
+
+        res.json({
+            success: true,
+            message: 'Email verified successfully! You are now logged in.',
+            token: jwtToken,
             data: getSafeUser(user)
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   RESEND VERIFICATION EMAIL
+========================= */
+
+app.post('/auth/resend-verification', async (req, res, next) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email is required'
+            });
+        }
+
+        const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+        if (!user) {
+            // Don't reveal if email exists
+            return res.json({
+                success: true,
+                message: 'If an unverified account exists, a new verification email has been sent.'
+            });
+        }
+
+        if (user.isEmailVerified) {
+            return res.status(400).json({
+                success: false,
+                message: 'This account is already verified.'
+            });
+        }
+
+        // Rate limit: 1 email per 2 minutes
+        if (user.lastVerificationSentAt) {
+            const diffMs = Date.now() - new Date(user.lastVerificationSentAt).getTime();
+            if (diffMs < 2 * 60 * 1000) {
+                return res.status(429).json({
+                    success: false,
+                    message: 'Please wait 2 minutes before requesting another verification email.'
+                });
+            }
+        }
+
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        user.emailVerificationToken = hashedToken;
+        user.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000;
+        user.lastVerificationSentAt = new Date();
+        await user.save();
+
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const verifyUrl = `${frontendUrl}/verify-email?token=${rawToken}`;
+
+        const emailSent = await sendEmail({
+            to: user.email,
+            subject: 'Verify your Portfolio account',
+            html: `
+                <h2>Email Verification</h2>
+                <p>Hello ${user.name},</p>
+                <p>Here is your new verification link. It expires in 24 hours.</p>
+                <a href="${verifyUrl}" style="
+                    display:inline-block;
+                    padding:12px 24px;
+                    background:#67e8a5;
+                    color:#0b0f14;
+                    text-decoration:none;
+                    border-radius:8px;
+                    font-weight:600;
+                ">Verify Email</a>
+                <p>Or copy: ${verifyUrl}</p>
+            `
+        });
+
+        if (!emailSent) {
+            console.log('RESEND VERIFICATION URL:', verifyUrl);
+        }
+
+        res.json({
+            success: true,
+            message: 'If an unverified account exists, a new verification email has been sent.'
         });
     } catch (err) {
         next(err);
@@ -133,9 +337,7 @@ app.post('/login', async (req, res, next) => {
             });
         }
 
-        const user = await User.findOne({
-            email: email.toLowerCase().trim()
-        });
+        const user = await User.findOne({ email: email.toLowerCase().trim() });
 
         if (!user) {
             return res.status(401).json({
@@ -152,11 +354,19 @@ app.post('/login', async (req, res, next) => {
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
-
         if (!isMatch) {
             return res.status(401).json({
                 success: false,
                 message: 'Invalid email or password'
+            });
+        }
+
+        if (!user.isEmailVerified) {
+            return res.status(403).json({
+                success: false,
+                message: 'Please verify your email before logging in.',
+                requiresVerification: true,
+                email: user.email
             });
         }
 
@@ -202,7 +412,6 @@ app.post('/auth/google', async (req, res, next) => {
         });
 
         const payload = ticket.getPayload();
-
         if (!payload || !payload.email) {
             return res.status(400).json({
                 success: false,
@@ -211,13 +420,9 @@ app.post('/auth/google', async (req, res, next) => {
         }
 
         const email = payload.email.toLowerCase().trim();
-
         let user = await User.findOne({ email });
 
-        /*
-         * New Google user:
-         * We need work/relationship before creating the account.
-         */
+        // New Google user — need work field
         if (!user && !work) {
             return res.json({
                 success: false,
@@ -232,30 +437,23 @@ app.post('/auth/google', async (req, res, next) => {
         }
 
         if (!user) {
+            const isAdmin = getAdminEmail() && email === getAdminEmail();
             user = await User.create({
                 name: payload.name || 'Google User',
                 email,
                 password: null,
                 work: work.trim(),
+                role: isAdmin ? 'admin' : 'student',
+                isEmailVerified: true, // Google emails are pre-verified
                 googleId: payload.sub,
                 profileImage: payload.picture || ''
             });
         } else {
-            /*
-             * Link Google account to an existing email account.
-             */
-            if (!user.googleId) {
-                user.googleId = payload.sub;
-            }
-
-            if (payload.picture && !user.profileImage) {
-                user.profileImage = payload.picture;
-            }
-
-            if (!user.work && work) {
-                user.work = work.trim();
-            }
-
+            if (!user.googleId) user.googleId = payload.sub;
+            if (payload.picture && !user.profileImage) user.profileImage = payload.picture;
+            if (!user.work && work) user.work = work.trim();
+            // Google accounts are auto-verified
+            if (!user.isEmailVerified) user.isEmailVerified = true;
             await user.save();
         }
 
@@ -293,7 +491,7 @@ app.post('/auth/google', async (req, res, next) => {
 app.get('/me', authMiddleware, async (req, res, next) => {
     try {
         const user = await User.findById(req.user.id).select(
-            '-password -resetPasswordToken -resetPasswordExpires'
+            '-password -resetPasswordToken -resetPasswordExpires -emailVerificationToken -emailVerificationExpires'
         );
 
         if (!user) {
@@ -328,14 +526,8 @@ app.post('/auth/forgot-password', async (req, res, next) => {
             });
         }
 
-        const user = await User.findOne({
-            email: email.toLowerCase().trim()
-        });
+        const user = await User.findOne({ email: email.toLowerCase().trim() });
 
-        /*
-         * Always return the same message so that
-         * registered emails cannot be discovered.
-         */
         if (!user) {
             return res.json({
                 success: true,
@@ -351,59 +543,37 @@ app.post('/auth/forgot-password', async (req, res, next) => {
         }
 
         const resetToken = crypto.randomBytes(32).toString('hex');
-
-        const hashedToken = crypto
-            .createHash('sha256')
-            .update(resetToken)
-            .digest('hex');
+        const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
         user.resetPasswordToken = hashedToken;
         user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
-
         await user.save();
 
-        const frontendUrl =
-            process.env.FRONTEND_URL || 'http://localhost:5173';
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-        const resetUrl =
-            `${frontendUrl}/reset-password?token=${resetToken}`;
+        const emailSent = await sendEmail({
+            to: user.email,
+            subject: 'Reset Your Portfolio Password',
+            html: `
+                <h2>Password Reset</h2>
+                <p>Hello ${user.name},</p>
+                <p>You requested a password reset. This link expires in 15 minutes.</p>
+                <a href="${resetUrl}" style="
+                    display:inline-block;
+                    padding:12px 24px;
+                    background:#67e8a5;
+                    color:#0b0f14;
+                    text-decoration:none;
+                    border-radius:8px;
+                    font-weight:600;
+                ">Reset Password</a>
+                <p>Or copy: ${resetUrl}</p>
+                <p>If you did not request this, ignore this email.</p>
+            `
+        });
 
-        /*
-         * Email configuration
-         */
-        if (
-            process.env.EMAIL_USER &&
-            process.env.EMAIL_PASSWORD
-        ) {
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASSWORD
-                }
-            });
-
-            await transporter.sendMail({
-                from: process.env.EMAIL_USER,
-                to: user.email,
-                subject: 'Reset Your Portfolio Password',
-                html: `
-                    <h2>Password Reset</h2>
-                    <p>Hello ${user.name},</p>
-                    <p>You requested a password reset.</p>
-                    <p>This link will expire in 15 minutes.</p>
-                    <a href="${resetUrl}">
-                        Reset Password
-                    </a>
-                    <p>If you did not request this, you can ignore this email.</p>
-                `
-            });
-        } else {
-            /*
-             * Development fallback.
-             * Once email is configured, the reset link will
-             * be sent to the user's email instead.
-             */
+        if (!emailSent) {
             console.log('PASSWORD RESET URL:', resetUrl);
         }
 
@@ -439,16 +609,11 @@ app.post('/auth/reset-password', async (req, res, next) => {
             });
         }
 
-        const hashedToken = crypto
-            .createHash('sha256')
-            .update(token)
-            .digest('hex');
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
         const user = await User.findOne({
             resetPasswordToken: hashedToken,
-            resetPasswordExpires: {
-                $gt: Date.now()
-            }
+            resetPasswordExpires: { $gt: Date.now() }
         });
 
         if (!user) {
@@ -461,12 +626,11 @@ app.post('/auth/reset-password', async (req, res, next) => {
         user.password = await bcrypt.hash(password, 10);
         user.resetPasswordToken = null;
         user.resetPasswordExpires = null;
-
         await user.save();
 
         res.json({
             success: true,
-            message: 'Password reset successfully'
+            message: 'Password reset successfully. You can now log in.'
         });
     } catch (err) {
         next(err);
@@ -475,20 +639,15 @@ app.post('/auth/reset-password', async (req, res, next) => {
 
 
 /* =========================
-   GET ALL TASKS
-   PUBLIC
+   GET ALL TASKS (public read)
 ========================= */
 
 app.get('/tasks', async (req, res, next) => {
     try {
         const tasks = await Task.find()
-            .populate(
-                'createdBy',
-                'name email work profileImage'
-            )
-            .sort({
-                createdAt: -1
-            });
+            .populate('createdBy', 'name email work profileImage role')
+            .populate('assignedTo', 'name email role')
+            .sort({ createdAt: -1 });
 
         res.json({
             success: true,
@@ -502,28 +661,20 @@ app.get('/tasks', async (req, res, next) => {
 
 
 /* =========================
-   GET SINGLE TASK
-   PUBLIC
+   GET MY TASKS (authenticated user's own tasks)
 ========================= */
 
-app.get('/tasks/:id', async (req, res, next) => {
+app.get('/tasks/mine', authMiddleware, async (req, res, next) => {
     try {
-        const task = await Task.findById(req.params.id)
-            .populate(
-                'createdBy',
-                'name email work profileImage'
-            );
-
-        if (!task) {
-            return res.status(404).json({
-                success: false,
-                message: 'Task not found'
-            });
-        }
+        const tasks = await Task.find({ createdBy: req.user.id })
+            .populate('createdBy', 'name email work profileImage')
+            .populate('assignedTo', 'name email role')
+            .sort({ createdAt: -1 });
 
         res.json({
             success: true,
-            data: task
+            count: tasks.length,
+            data: tasks
         });
     } catch (err) {
         next(err);
@@ -532,60 +683,14 @@ app.get('/tasks/:id', async (req, res, next) => {
 
 
 /* =========================
-   CREATE TASK
-   PROTECTED
+   GET SINGLE TASK (public)
 ========================= */
 
-app.post(
-    '/tasks',
-    authMiddleware,
-    validateTask,
-    async (req, res, next) => {
-        try {
-            const {
-                title,
-                description,
-                priority,
-                status,
-                dueDate,
-                completed
-            } = req.body;
-
-            const task = await Task.create({
-                title,
-                description,
-                priority,
-                status,
-                dueDate,
-                completed,
-                createdBy: req.user.id
-            });
-
-            const populatedTask = await Task.findById(task._id)
-                .populate(
-                    'createdBy',
-                    'name email work profileImage'
-                );
-
-            res.status(201).json({
-                success: true,
-                data: populatedTask
-            });
-        } catch (err) {
-            next(err);
-        }
-    }
-);
-
-
-/* =========================
-   UPDATE TASK
-   OWNER ONLY
-========================= */
-
-app.put('/tasks/:id', authMiddleware, async (req, res, next) => {
+app.get('/tasks/:id', async (req, res, next) => {
     try {
-        const task = await Task.findById(req.params.id);
+        const task = await Task.findById(req.params.id)
+            .populate('createdBy', 'name email work profileImage')
+            .populate('assignedTo', 'name email role');
 
         if (!task) {
             return res.status(404).json({
@@ -594,54 +699,113 @@ app.put('/tasks/:id', authMiddleware, async (req, res, next) => {
             });
         }
 
-        if (task.createdBy.toString() !== req.user.id.toString()) {
+        res.json({ success: true, data: task });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   CREATE TASK (protected, verified users only)
+========================= */
+
+app.post('/tasks', authMiddleware, validateTask, async (req, res, next) => {
+    try {
+        // Check email verification
+        const user = await User.findById(req.user.id).select('isEmailVerified role');
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        if (!user.isEmailVerified) {
+            return res.status(403).json({
+                success: false,
+                message: 'Please verify your email before creating tasks.'
+            });
+        }
+
+        const { title, description, priority, status, dueDate, completed, category, notes } = req.body;
+
+        // Default assignedTo = admin (portfolio owner) — looked up by ADMIN_EMAIL
+        let assignedTo = null;
+        const adminEmail = getAdminEmail();
+        if (adminEmail) {
+            const adminUser = await User.findOne({ email: adminEmail, role: 'admin' }).select('_id');
+            if (adminUser) assignedTo = adminUser._id;
+        }
+
+        const task = await Task.create({
+            title,
+            description,
+            priority,
+            status,
+            dueDate,
+            completed,
+            category,
+            notes,
+            createdBy: req.user.id,
+            assignedTo
+        });
+
+        const populatedTask = await Task.findById(task._id)
+            .populate('createdBy', 'name email work profileImage')
+            .populate('assignedTo', 'name email role');
+
+        res.status(201).json({ success: true, data: populatedTask });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   UPDATE TASK (owner or admin)
+========================= */
+
+app.put('/tasks/:id', authMiddleware, async (req, res, next) => {
+    try {
+        const task = await Task.findById(req.params.id);
+        if (!task) {
+            return res.status(404).json({ success: false, message: 'Task not found' });
+        }
+
+        const user = await User.findById(req.user.id).select('role');
+        const isAdmin = user && user.role === 'admin';
+        const isOwner = task.createdBy.toString() === req.user.id.toString();
+
+        if (!isOwner && !isAdmin) {
             return res.status(403).json({
                 success: false,
                 message: 'You can only edit your own tasks'
             });
         }
 
-        const {
-            title,
-            description,
-            priority,
-            status,
-            dueDate
-        } = req.body;
+        const { title, description, priority, status, dueDate, category, notes, assignedTo } = req.body;
 
-        if (title !== undefined) {
-            task.title = title;
-        }
-
-        if (description !== undefined) {
-            task.description = description;
-        }
-
-        if (priority !== undefined) {
-            task.priority = priority;
-        }
+        if (title !== undefined) task.title = title;
+        if (description !== undefined) task.description = description;
+        if (priority !== undefined) task.priority = priority;
+        if (category !== undefined) task.category = category;
+        if (notes !== undefined) task.notes = notes;
 
         if (status !== undefined) {
             task.status = status;
             task.completed = status === 'completed';
         }
 
-        if (dueDate !== undefined) {
-            task.dueDate = dueDate || null;
+        if (dueDate !== undefined) task.dueDate = dueDate || null;
+
+        // Only admin can reassign tasks
+        if (assignedTo !== undefined && isAdmin) {
+            task.assignedTo = assignedTo || null;
         }
 
         await task.save();
 
         const updatedTask = await Task.findById(task._id)
-            .populate(
-                'createdBy',
-                'name email work profileImage'
-            );
+            .populate('createdBy', 'name email work profileImage')
+            .populate('assignedTo', 'name email role');
 
-        res.json({
-            success: true,
-            data: updatedTask
-        });
+        res.json({ success: true, data: updatedTask });
     } catch (err) {
         next(err);
     }
@@ -649,22 +813,21 @@ app.put('/tasks/:id', authMiddleware, async (req, res, next) => {
 
 
 /* =========================
-   DELETE TASK
-   OWNER ONLY
+   DELETE TASK (owner or admin)
 ========================= */
 
 app.delete('/tasks/:id', authMiddleware, async (req, res, next) => {
     try {
         const task = await Task.findById(req.params.id);
-
         if (!task) {
-            return res.status(404).json({
-                success: false,
-                message: 'Task not found'
-            });
+            return res.status(404).json({ success: false, message: 'Task not found' });
         }
 
-        if (task.createdBy.toString() !== req.user.id.toString()) {
+        const user = await User.findById(req.user.id).select('role');
+        const isAdmin = user && user.role === 'admin';
+        const isOwner = task.createdBy.toString() === req.user.id.toString();
+
+        if (!isOwner && !isAdmin) {
             return res.status(403).json({
                 success: false,
                 message: 'You can only delete your own tasks'
@@ -673,10 +836,135 @@ app.delete('/tasks/:id', authMiddleware, async (req, res, next) => {
 
         await Task.findByIdAndDelete(req.params.id);
 
-        res.json({
-            success: true,
-            message: 'Task deleted successfully'
-        });
+        res.json({ success: true, message: 'Task deleted successfully' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   ADMIN — GET ALL USERS
+========================= */
+
+app.get('/admin/users', authMiddleware, adminMiddleware, async (req, res, next) => {
+    try {
+        const { search, role } = req.query;
+
+        const filter = {};
+        if (role && ['student', 'admin'].includes(role)) filter.role = role;
+        if (search) {
+            filter.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const users = await User.find(filter)
+            .select('-password -resetPasswordToken -resetPasswordExpires -emailVerificationToken -emailVerificationExpires')
+            .sort({ createdAt: -1 });
+
+        res.json({ success: true, count: users.length, data: users });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   ADMIN — UPDATE USER ROLE
+========================= */
+
+app.patch('/admin/users/:id/role', authMiddleware, adminMiddleware, async (req, res, next) => {
+    try {
+        const { role } = req.body;
+
+        if (!['student', 'admin'].includes(role)) {
+            return res.status(400).json({ success: false, message: 'Invalid role' });
+        }
+
+        // Prevent demoting yourself
+        if (req.params.id === req.user.id && role !== 'admin') {
+            return res.status(400).json({
+                success: false,
+                message: 'You cannot demote your own admin account'
+            });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            { role },
+            { new: true }
+        ).select('-password -resetPasswordToken -emailVerificationToken');
+
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        res.json({ success: true, data: getSafeUser(user) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   ADMIN — DELETE USER
+========================= */
+
+app.delete('/admin/users/:id', authMiddleware, adminMiddleware, async (req, res, next) => {
+    try {
+        if (req.params.id === req.user.id) {
+            return res.status(400).json({
+                success: false,
+                message: 'You cannot delete your own account'
+            });
+        }
+
+        const user = await User.findByIdAndDelete(req.params.id);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Remove their tasks too
+        await Task.deleteMany({ createdBy: req.params.id });
+
+        res.json({ success: true, message: 'User and their tasks deleted successfully' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+
+/* =========================
+   ADMIN — GET ALL TASKS (with filters)
+========================= */
+
+app.get('/admin/tasks', authMiddleware, adminMiddleware, async (req, res, next) => {
+    try {
+        const { priority, status, createdBy, sort } = req.query;
+
+        const filter = {};
+        if (priority) filter.priority = priority;
+        if (status) filter.status = status;
+        if (createdBy) filter.createdBy = createdBy;
+
+        let sortObj = { createdAt: -1 };
+        if (sort === 'oldest') sortObj = { createdAt: 1 };
+        if (sort === 'deadline') sortObj = { dueDate: 1 };
+
+        const tasks = await Task.find(filter)
+            .populate('createdBy', 'name email work profileImage')
+            .populate('assignedTo', 'name email role')
+            .sort(sortObj);
+
+        // Stats
+        const now = new Date();
+        const stats = {
+            total: tasks.length,
+            pending: tasks.filter(t => t.status === 'pending').length,
+            active: tasks.filter(t => t.status === 'active').length,
+            completed: tasks.filter(t => t.completed).length,
+            overdue: tasks.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < now).length
+        };
+
+        res.json({ success: true, count: tasks.length, stats, data: tasks });
     } catch (err) {
         next(err);
     }
@@ -691,35 +979,19 @@ app.use((err, req, res, next) => {
     console.error(err);
 
     if (err.name === 'ValidationError') {
-        const errors = Object.values(err.errors).map(
-            (error) => error.message
-        );
-
-        return res.status(400).json({
-            success: false,
-            message: 'Validation failed',
-            errors
-        });
+        const errors = Object.values(err.errors).map(e => e.message);
+        return res.status(400).json({ success: false, message: 'Validation failed', errors });
     }
 
     if (err.name === 'CastError') {
-        return res.status(400).json({
-            success: false,
-            message: 'Invalid ID format'
-        });
+        return res.status(400).json({ success: false, message: 'Invalid ID format' });
     }
 
     if (err.code === 11000) {
-        return res.status(400).json({
-            success: false,
-            message: 'Email already registered'
-        });
+        return res.status(400).json({ success: false, message: 'Email already registered' });
     }
 
-    res.status(500).json({
-        success: false,
-        message: 'Server error'
-    });
+    res.status(500).json({ success: false, message: 'Server error' });
 });
 
 

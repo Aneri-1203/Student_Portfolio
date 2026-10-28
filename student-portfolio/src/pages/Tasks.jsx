@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import './Tasks.css';
 
 import {
@@ -7,6 +8,7 @@ import {
     updateTask,
     deleteTask
 } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 const emptyForm = {
     title: '',
@@ -17,6 +19,7 @@ const emptyForm = {
 };
 
 function Tasks() {
+    const { isAuthenticated, user } = useAuth();
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -222,12 +225,18 @@ function Tasks() {
 
                     <div className="tasks-actions">
 
-                        <button
-                            className="add-task-btn"
-                            onClick={handleAddTask}
-                        >
-                            + Add Task
-                        </button>
+                        {isAuthenticated ? (
+                            <button
+                                className="add-task-btn"
+                                onClick={handleAddTask}
+                            >
+                                + Add Task
+                            </button>
+                        ) : (
+                            <Link to="/login" className="add-task-btn" style={{ textDecoration: 'none', textAlign: 'center' }}>
+                                Sign in to add tasks
+                            </Link>
+                        )}
 
                         <button
                             className="retry-btn"
@@ -520,27 +529,34 @@ function Tasks() {
 
                                     <div className="task-card-buttons">
 
-                                        <button
-                                            className="edit-task-btn"
-                                            onClick={() =>
-                                                handleEditTask(task)
-                                            }
-                                            disabled={deletingId === task._id}
-                                        >
-                                            Edit
-                                        </button>
+                                        {(isAuthenticated && (
+                                            user?.id === task.createdBy?._id ||
+                                            user?.role === 'admin'
+                                        )) && (
+                                            <>
+                                                <button
+                                                    className="edit-task-btn"
+                                                    onClick={() =>
+                                                        handleEditTask(task)
+                                                    }
+                                                    disabled={deletingId === task._id}
+                                                >
+                                                    Edit
+                                                </button>
 
-                                        <button
-                                            className="delete-task-btn"
-                                            onClick={() =>
-                                                handleDeleteTask(task._id)
-                                            }
-                                            disabled={deletingId === task._id}
-                                        >
-                                            {deletingId === task._id
-                                                ? 'Deleting...'
-                                                : 'Delete'}
-                                        </button>
+                                                <button
+                                                    className="delete-task-btn"
+                                                    onClick={() =>
+                                                        handleDeleteTask(task._id)
+                                                    }
+                                                    disabled={deletingId === task._id}
+                                                >
+                                                    {deletingId === task._id
+                                                        ? 'Deleting...'
+                                                        : 'Delete'}
+                                                </button>
+                                            </>
+                                        )}
 
                                     </div>
 
